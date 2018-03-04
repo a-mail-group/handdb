@@ -20,35 +20,27 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-package main
+package handler
 
-import (
-	"os"
-	"io"
-	"net/textproto"
-	"github.com/maxymania/handdb/handler"
-	bolt "github.com/coreos/bbolt"
-)
+import "io"
+import "bufio"
+import "github.com/maxymania/handdb/scan"
 
-type nrc struct {}
-func (c *nrc) Read(p []byte) (n int, err error) { return 0,io.EOF }
-func (c *nrc) Write(p []byte) (n int, err error) { return n,nil }
-
-type rwc struct {
-	io.Reader
-	io.Writer
+func parseQuery(r io.Reader) (query [][][]byte) {
+	var line [][]byte
+	s := bufio.NewScanner(r)
+	s.Split(scan.ScanElem)
+	for s.Scan() {
+		tok := s.Bytes()
+		if len(tok)==0 { continue }
+		switch tok[0] {
+		case ':': line = append(line,tok[1:])
+		case 'N':
+			if len(line)>0 { query = append(query,line); line = nil }
+		}
+	}
+	if len(line)>0 { query = append(query,line) }
+	return
 }
-func (r *rwc) Close() error {
-	ll := new(nrc)
-	*r = rwc{ll,ll}
-	return nil
-}
 
-func main() {
-	o,e := bolt.Open("local.db", 0600, nil)
-	if e!=nil { return }
-	h := &handler.Master{o}
-	c := textproto.NewConn(&rwc{os.Stdin,os.Stdout})
-	h.Handle(c)
-}
 

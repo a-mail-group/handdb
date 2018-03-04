@@ -20,35 +20,61 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-package main
+package scan
 
-import (
-	"os"
-	"io"
-	"net/textproto"
-	"github.com/maxymania/handdb/handler"
-	bolt "github.com/coreos/bbolt"
-)
+//import "fmt"
 
-type nrc struct {}
-func (c *nrc) Read(p []byte) (n int, err error) { return 0,io.EOF }
-func (c *nrc) Write(p []byte) (n int, err error) { return n,nil }
-
-type rwc struct {
-	io.Reader
-	io.Writer
-}
-func (r *rwc) Close() error {
-	ll := new(nrc)
-	*r = rwc{ll,ll}
-	return nil
+func grow(token []byte) []byte {
+	if cap(token) > len(token) { return token }
+	l := 128
+	if len(token) < l { l = len(token) }
+	if l==0 { l = 8 }
+	ntoken := make([]byte,len(token),len(token)+l)
+	copy(ntoken,token)
+	return ntoken
 }
 
-func main() {
-	o,e := bolt.Open("local.db", 0600, nil)
-	if e!=nil { return }
-	h := &handler.Master{o}
-	c := textproto.NewConn(&rwc{os.Stdin,os.Stdout})
-	h.Handle(c)
+func ScanElem(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	t := 0
+	for i,b := range data {
+		switch t {
+		case 0:
+			switch b {
+			case '\r','\n':
+				token = append(grow(token),'N')
+				t = 4
+				continue
+			}
+			if b<=' ' { continue }
+			token = append(grow(token),':')
+			switch b {
+			case '"': t = 1
+			default:
+				token = append(grow(token),b)
+				t = 3
+			}
+		case 1:
+			if b=='"' { t = 2; continue }
+			token = append(grow(token),b)
+		case 2:
+			if b!='"' { advance = i; return }
+			token = append(grow(token),b)
+			t = 1
+		case 3:
+			if b<=' ' { advance = i; return }
+			token = append(grow(token),b)
+		case 4:
+			switch b {
+			case '\r','\n': continue
+			}
+			advance = i
+			return
+		}
+	}
+	if atEOF { advance = len(data) }
+	return
 }
+
+
+
 
