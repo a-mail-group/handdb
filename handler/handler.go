@@ -25,6 +25,7 @@ package handler
 import "net/textproto"
 import bolt "github.com/coreos/bbolt"
 import "fmt"
+import "encoding/csv"
 
 func escape(x []byte) []byte {
 	y := make([]byte,0,len(x)+2+16)
@@ -53,6 +54,11 @@ func (m *Master) get(tn []byte) table {
 	case "bag": return &tab1{tn}
 	case "group": return &tab2{tn}
 	case "bug": return &rtab1{tn}
+	case "grp2":{
+			x := new(rtab2)
+			x.tn = tn
+			return x
+		}
 	}
 	return nil
 }
@@ -102,7 +108,7 @@ func (h *Handler) Handle() {
 				}
 				wc.Close()
 			}
-		case "LKUP":{
+		case "LKUP","LKUP.CSV":{
 				res := parseQuery(h.C.DotReader())
 				dmk := make([]string,len(res))
 				result := make([][][]byte,len(res))
@@ -127,11 +133,28 @@ func (h *Handler) Handle() {
 				})
 				h.C.PrintfLine("RSTS")
 				wc := h.C.DotWriter()
-				for i,s := range dmk {
-					for _,elem := range result[i] {
-						fmt.Fprintf(wc,"%s ",escape(elem))
+				switch s {
+				case "LKUP":
+					for i,s := range dmk {
+						for _,elem := range result[i] {
+							fmt.Fprintf(wc,"%s ",escape(elem))
+						}
+						fmt.Fprintln(wc,s)
 					}
-					fmt.Fprintln(wc,s)
+				case "LKUP.CSV":{
+					var row []string
+					csvout := csv.NewWriter(wc)
+					for i,s := range dmk {
+						row = row[:0]
+						
+						for _,elem := range result[i] {
+							row = append(row,string(elem))
+						}
+						row = append(row,s)
+						csvout.Write(row)
+					}
+					csvout.Flush()
+					}
 				}
 				wc.Close()
 			}

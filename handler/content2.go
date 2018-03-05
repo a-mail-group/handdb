@@ -58,7 +58,7 @@ func (t *rtab1) Lookup(tx *bolt.Tx, record [][]byte) (be [][]byte,err error) {
 	if len(ele)==0 { return nil,ENotFound }
 	err = msgpack.Unmarshal(ele,&a1,&a2)
 	if err!=nil { return }
-	return [][]byte{a1},nil
+	return [][]byte{a1,a2},nil
 }
 func (t *rtab1) Delete(tx *bolt.Tx, record [][]byte) error {
 	var a1,a2 []byte
@@ -124,16 +124,20 @@ func (t *rtab2) Insert(tx *bolt.Tx, record [][]byte) error {
 	key,_ := msgpack.Marshal(record[0],record[1])
 	rec,_ := msgpack.Marshal(record[2],record[3])
 	part,err := tab.CreateBucketIfNotExists(rc)
+	if err!=nil { return err }
+	bak,err := tab.CreateBucketIfNotExists(dt)
+	if err!=nil { return err }
 	rc[0] = '$'
 	msgpack.Unmarshal(tab.Get(rc),&count)
-	if err!=nil { return err }
 	err = part.Put(record[1],rec)
+	if err!=nil { return err }
+	err = bak.Put(key,cnst2)
 	if err!=nil { return err }
 	count++
 	blob,_ := msgpack.Marshal(count)
 	err = tab.Put(rc,blob)
 	if err!=nil { return err }
-	return tab.Put(dt,key)
+	return nil
 }
 func (t *rtab2) Lookup(tx *bolt.Tx, record [][]byte) (be [][]byte,err error) {
 	var a1,a2 []byte
@@ -147,7 +151,7 @@ func (t *rtab2) Lookup(tx *bolt.Tx, record [][]byte) (be [][]byte,err error) {
 	if len(ele)==0 { return nil,ENotFound }
 	err = msgpack.Unmarshal(ele,&a1,&a2)
 	if err!=nil { return }
-	return [][]byte{a1},nil
+	return [][]byte{a1,a2},nil
 }
 func (t *rtab2) Delete(tx *bolt.Tx, record [][]byte) error {
 	var a1,a2 []byte
@@ -176,22 +180,21 @@ func (t *rtab2) Expire(tx *bolt.Tx, record [][]byte) error {
 	if len(record)!=1 { return EBadRecord }
 	tab := tx.Bucket(t.tn)
 	cur := tab.Cursor()
-	k,_ := cur.Seek([]byte("&"))
-	subbase := [][]byte{nil}
-	for len(k)>0 && bytes.Compare(k[1:],record[0])<=0 {
+	subbase := [][]byte{nil,nil}
+	for k,_ := cur.Seek([]byte("&")) ; true ; k,_ = cur.Next() {
 		if len(k)==0 { break }
 		if k[0]!='&' { break }
 		if bytes.Compare(k[1:],record[0])>0 { break }
 		
 		ztab := tab.Bucket(k)
+		if ztab==nil { continue }
 		zcur := ztab.Cursor()
 		for v,_ := zcur.First(); len(v)>0 ; v,_ = zcur.Next() {
+			msgpack.Unmarshal(v,&subbase[0],&subbase[1])
 			zcur.Delete()
-			subbase[0] = v
 			t.tab2.Delete(tx,subbase)
 		}
-		cur.Delete()
-		k,_ = cur.Next()
+		tab.DeleteBucket(k)
 	}
 	return nil
 }
